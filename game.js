@@ -1,34 +1,57 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-canvas.width = 480;
-canvas.height = 640;
+function resizeCanvas() {
+    canvas.width = Math.min(window.innerWidth * 0.95, 1200);
+    canvas.height = Math.min(window.innerHeight * 0.95, 800);
+}
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
 let gameState = 'start';
 let score = 0;
 let bestScore = localStorage.getItem('bestScore') || 0;
 let frameCount = 0;
+let soundEnabled = true;
+let selectedBird = 'yellow';
+let backgroundMusic = null;
+let musicStarted = false;
 
-const gravity = 0.5;
-const jumpPower = -8;
-const pipeGap = 180;
-const pipeWidth = 80;
-const pipeSpeed = 3;
+const gravity = 0.25;
+const jumpPower = -6;
+const pipeGap = 220;
+const pipeWidth = 100;
+const pipeSpeed = 2.5;
+const birdBounceSpeed = 0.15;
 
 const bird = {
-    x: 100,
+    x: 150,
     y: canvas.height / 2,
-    size: 35,
+    size: 40,
     velocity: 0,
-    color: '#FFD700',
+    rotation: 0,
     wingAngle: 0,
-    rotation: 0
+    bounceY: 0,
+    emoji: '🐤',
+    hasShield: false,
+    shieldTime: 0
+};
+
+const birdEmojis = {
+    yellow: '🐤',
+    blue: '🐦',
+    red: '🦜',
+    owl: '🦉',
+    eagle: '🦅'
 };
 
 const pipes = [];
 const clouds = [];
 const stars = [];
 const particles = [];
+const powerUps = [];
+const floatingHearts = [];
 
 const colors = {
     sky: ['#87CEEB', '#87E0FF'],
@@ -38,17 +61,17 @@ const colors = {
 };
 
 function init() {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
         clouds.push({
             x: Math.random() * canvas.width * 2,
-            y: Math.random() * 200,
-            width: 60 + Math.random() * 40,
-            height: 30 + Math.random() * 20,
-            speed: 0.5 + Math.random() * 0.5
+            y: Math.random() * (canvas.height * 0.3),
+            width: 80 + Math.random() * 60,
+            height: 40 + Math.random() * 30,
+            speed: 0.3 + Math.random() * 0.4
         });
     }
     
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
         stars.push({
             x: Math.random() * canvas.width,
             y: Math.random() * canvas.height,
@@ -56,18 +79,63 @@ function init() {
             twinkle: Math.random() * Math.PI * 2
         });
     }
+    
+    for (let i = 0; i < 5; i++) {
+        floatingHearts.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: 20 + Math.random() * 15,
+            speed: 0.5 + Math.random() * 0.5,
+            angle: Math.random() * Math.PI * 2
+        });
+    }
+}
+
+function createBackgroundMusic() {
+    if (!soundEnabled || musicStarted) return;
+    
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    musicStarted = true;
+    
+    function playBackgroundNote() {
+        if (!soundEnabled || gameState === 'gameover') return;
+        
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        const notes = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88];
+        const note = notes[Math.floor(Math.random() * notes.length)];
+        
+        oscillator.frequency.setValueAtTime(note, audioContext.currentTime);
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.05, audioContext.currentTime + 0.1);
+        gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 2);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 2);
+        
+        setTimeout(playBackgroundNote, 2000 + Math.random() * 3000);
+    }
+    
+    playBackgroundNote();
 }
 
 function drawBackground() {
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, '#87CEEB');
-    gradient.addColorStop(0.5, '#98D8E8');
-    gradient.addColorStop(1, '#BDE6F1');
+    gradient.addColorStop(0, '#FFB6C1');
+    gradient.addColorStop(0.3, '#87CEEB');
+    gradient.addColorStop(0.6, '#98D8E8');
+    gradient.addColorStop(1, '#E6E6FA');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     ctx.beginPath();
-    ctx.arc(canvas.width - 80, 80, 40, 0, Math.PI * 2);
+    ctx.arc(canvas.width - 100, 100, 50, 0, Math.PI * 2);
     ctx.fillStyle = colors.sun;
     ctx.fill();
     ctx.strokeStyle = '#FFD700';
@@ -75,142 +143,183 @@ function drawBackground() {
     ctx.stroke();
     
     for (let i = 0; i < 12; i++) {
-        const angle = (i * Math.PI * 2) / 12;
-        const x1 = canvas.width - 80 + Math.cos(angle) * 50;
-        const y1 = 80 + Math.sin(angle) * 50;
-        const x2 = canvas.width - 80 + Math.cos(angle) * 60;
-        const y2 = 80 + Math.sin(angle) * 60;
+        const angle = (i * Math.PI * 2) / 12 + frameCount * 0.01;
+        const x1 = canvas.width - 100 + Math.cos(angle) * 60;
+        const y1 = 100 + Math.sin(angle) * 60;
+        const x2 = canvas.width - 100 + Math.cos(angle) * 75;
+        const y2 = 100 + Math.sin(angle) * 75;
         
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
         ctx.strokeStyle = '#FFD700';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.stroke();
     }
     
-    clouds.forEach(cloud => {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.beginPath();
-        ctx.ellipse(cloud.x, cloud.y, cloud.width / 2, cloud.height / 2, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(cloud.x - cloud.width / 3, cloud.y, cloud.width / 3, cloud.height / 2.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(cloud.x + cloud.width / 3, cloud.y, cloud.width / 3, cloud.height / 2.5, 0, 0, Math.PI * 2);
-        ctx.fill();
+    floatingHearts.forEach(heart => {
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.font = `${heart.size}px Arial`;
+        ctx.fillText('💖', heart.x, heart.y);
+        ctx.restore();
     });
     
-    const groundHeight = 80;
+    clouds.forEach(cloud => {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        
+        for (let i = 0; i < 3; i++) {
+            const offsetX = (i - 1) * cloud.width / 3;
+            const offsetY = Math.sin(i) * 10;
+            ctx.beginPath();
+            ctx.ellipse(
+                cloud.x + offsetX, 
+                cloud.y + offsetY, 
+                cloud.width / 3, 
+                cloud.height / 2, 
+                0, 0, Math.PI * 2
+            );
+            ctx.fill();
+        }
+    });
+    
+    const groundHeight = 100;
     const groundGradient = ctx.createLinearGradient(0, canvas.height - groundHeight, 0, canvas.height);
-    groundGradient.addColorStop(0, '#8FBC8F');
+    groundGradient.addColorStop(0, '#90EE90');
+    groundGradient.addColorStop(0.5, '#7CFC00');
     groundGradient.addColorStop(1, '#556B2F');
     ctx.fillStyle = groundGradient;
     ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
     
-    ctx.strokeStyle = '#4A5F4A';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < canvas.width; i += 40) {
+    for (let i = 0; i < canvas.width; i += 30) {
         ctx.beginPath();
         ctx.moveTo(i, canvas.height - groundHeight);
-        ctx.lineTo(i + 20, canvas.height - groundHeight + 10);
+        ctx.quadraticCurveTo(i + 15, canvas.height - groundHeight - 10, i + 30, canvas.height - groundHeight);
+        ctx.strokeStyle = '#228B22';
+        ctx.lineWidth = 2;
         ctx.stroke();
+    }
+    
+    for (let i = 0; i < canvas.width; i += 60) {
+        ctx.font = '20px Arial';
+        ctx.fillText('🌻', i, canvas.height - groundHeight + 20);
+        ctx.fillText('🌸', i + 30, canvas.height - groundHeight + 40);
     }
 }
 
 function drawBird() {
     ctx.save();
-    ctx.translate(bird.x, bird.y);
+    ctx.translate(bird.x, bird.y + bird.bounceY);
     ctx.rotate(bird.rotation);
     
-    ctx.fillStyle = bird.color;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, bird.size, bird.size * 0.8, 0, 0, Math.PI * 2);
-    ctx.fill();
+    if (bird.hasShield) {
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(0, 0, bird.size + 10, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        for (let i = 0; i < 8; i++) {
+            const angle = (i * Math.PI / 4) + frameCount * 0.05;
+            const x = Math.cos(angle) * (bird.size + 15);
+            const y = Math.sin(angle) * (bird.size + 15);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
     
-    ctx.fillStyle = '#FFA500';
-    ctx.beginPath();
-    ctx.ellipse(-bird.size * 0.3, -bird.size * 0.2, bird.size * 0.5, bird.size * 0.4, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.font = `${bird.size * 2}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     
-    ctx.fillStyle = 'white';
-    ctx.beginPath();
-    ctx.ellipse(bird.size * 0.3, -bird.size * 0.2, bird.size * 0.25, bird.size * 0.3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.fillStyle = 'black';
-    ctx.beginPath();
-    ctx.arc(bird.size * 0.35, -bird.size * 0.2, bird.size * 0.1, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.fillStyle = 'white';
-    ctx.beginPath();
-    ctx.arc(bird.size * 0.38, -bird.size * 0.23, bird.size * 0.04, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.fillStyle = '#FF6347';
-    ctx.beginPath();
-    ctx.moveTo(bird.size * 0.5, 0);
-    ctx.lineTo(bird.size * 0.7, -bird.size * 0.05);
-    ctx.lineTo(bird.size * 0.7, bird.size * 0.05);
-    ctx.closePath();
-    ctx.fill();
-    
-    const wingY = Math.sin(bird.wingAngle) * bird.size * 0.2;
-    ctx.fillStyle = '#FFB347';
-    ctx.beginPath();
-    ctx.ellipse(-bird.size * 0.3, wingY, bird.size * 0.4, bird.size * 0.6, -0.3, 0, Math.PI * 2);
-    ctx.fill();
+    const wingFlap = Math.sin(bird.wingAngle) * 0.2;
+    ctx.save();
+    ctx.scale(1 + wingFlap * 0.1, 1 - wingFlap * 0.1);
+    ctx.fillText(bird.emoji, 0, 0);
+    ctx.restore();
     
     ctx.restore();
 }
 
 function drawPipe(pipe) {
     const gradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + pipeWidth, 0);
-    gradient.addColorStop(0, colors.pipe[0]);
-    gradient.addColorStop(0.5, colors.pipe[1]);
-    gradient.addColorStop(1, colors.pipe[0]);
+    gradient.addColorStop(0, '#32CD32');
+    gradient.addColorStop(0.5, '#228B22');
+    gradient.addColorStop(1, '#006400');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
     ctx.fillRect(pipe.x, pipe.bottom, pipeWidth, canvas.height - pipe.bottom);
     
-    ctx.fillStyle = '#5DAE50';
-    ctx.fillRect(pipe.x - 5, pipe.top - 30, pipeWidth + 10, 30);
-    ctx.fillRect(pipe.x - 5, pipe.bottom, pipeWidth + 10, 30);
+    ctx.fillStyle = '#228B22';
+    ctx.fillRect(pipe.x - 10, pipe.top - 40, pipeWidth + 20, 40);
+    ctx.fillRect(pipe.x - 10, pipe.bottom, pipeWidth + 20, 40);
     
-    ctx.strokeStyle = '#4A8F3C';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#006400';
+    ctx.lineWidth = 4;
     ctx.strokeRect(pipe.x, 0, pipeWidth, pipe.top);
     ctx.strokeRect(pipe.x, pipe.bottom, pipeWidth, canvas.height - pipe.bottom);
-    ctx.strokeRect(pipe.x - 5, pipe.top - 30, pipeWidth + 10, 30);
-    ctx.strokeRect(pipe.x - 5, pipe.bottom, pipeWidth + 10, 30);
+    ctx.strokeRect(pipe.x - 10, pipe.top - 40, pipeWidth + 20, 40);
+    ctx.strokeRect(pipe.x - 10, pipe.bottom, pipeWidth + 20, 40);
     
     for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.moveTo(pipe.x + 10 + i * 25, pipe.top - 25);
-        ctx.lineTo(pipe.x + 10 + i * 25, pipe.top - 5);
-        ctx.stroke();
-        
-        ctx.beginPath();
-        ctx.moveTo(pipe.x + 10 + i * 25, pipe.bottom + 5);
-        ctx.lineTo(pipe.x + 10 + i * 25, pipe.bottom + 25);
-        ctx.stroke();
+        ctx.font = '30px Arial';
+        ctx.fillText('🌿', pipe.x + i * 30, pipe.top - 10);
+        ctx.fillText('🌿', pipe.x + i * 30, pipe.bottom + 30);
     }
 }
 
+function drawPowerUp(powerUp) {
+    ctx.save();
+    ctx.translate(powerUp.x, powerUp.y);
+    ctx.rotate(frameCount * 0.05);
+    
+    ctx.font = '40px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    if (powerUp.type === 'shield') {
+        ctx.fillText('🛡️', 0, 0);
+    } else if (powerUp.type === 'star') {
+        ctx.fillText('⭐', 0, 0);
+    } else if (powerUp.type === 'heart') {
+        ctx.fillText('💖', 0, 0);
+    }
+    
+    ctx.restore();
+    
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(powerUp.x, powerUp.y, 25, 0, Math.PI * 2);
+    ctx.stroke();
+}
+
 function createParticle(x, y, type) {
-    const colors = type === 'score' ? ['#FFD700', '#FFA500', '#FF69B4'] : ['#87CEEB', '#98D8E8'];
-    particles.push({
-        x: x,
-        y: y,
-        vx: (Math.random() - 0.5) * 4,
-        vy: (Math.random() - 0.5) * 4,
-        size: Math.random() * 8 + 4,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        life: 1
-    });
+    const particleTypes = {
+        score: ['⭐', '✨', '💫', '🌟'],
+        jump: ['☁️', '💨', '🌬️'],
+        powerup: ['✨', '💖', '🌈', '🎉'],
+        crash: ['💥', '😵', '🌀']
+    };
+    
+    const emojis = particleTypes[type] || ['✨'];
+    
+    for (let i = 0; i < 5; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
+            emoji: emojis[Math.floor(Math.random() * emojis.length)],
+            size: 20 + Math.random() * 20,
+            life: 1,
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * 0.2
+        });
+    }
 }
 
 function updateParticles() {
@@ -218,11 +327,12 @@ function updateParticles() {
         const p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.vy += 0.1;
+        p.vy += 0.2;
         p.life -= 0.02;
-        p.size *= 0.98;
+        p.size *= 0.97;
+        p.rotation += p.rotationSpeed;
         
-        if (p.life <= 0) {
+        if (p.life <= 0 || p.size < 5) {
             particles.splice(i, 1);
         }
     }
@@ -232,10 +342,12 @@ function drawParticles() {
     particles.forEach(p => {
         ctx.save();
         ctx.globalAlpha = p.life;
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.font = `${p.size}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p.emoji, 0, 0);
         ctx.restore();
     });
 }
@@ -253,9 +365,22 @@ function drawStars() {
 function updateClouds() {
     clouds.forEach(cloud => {
         cloud.x -= cloud.speed;
-        if (cloud.x < -cloud.width) {
+        if (cloud.x < -cloud.width * 2) {
             cloud.x = canvas.width + cloud.width;
-            cloud.y = Math.random() * 200;
+            cloud.y = Math.random() * (canvas.height * 0.3);
+        }
+    });
+}
+
+function updateFloatingHearts() {
+    floatingHearts.forEach(heart => {
+        heart.x -= heart.speed;
+        heart.y += Math.sin(heart.angle) * 0.5;
+        heart.angle += 0.02;
+        
+        if (heart.x < -50) {
+            heart.x = canvas.width + 50;
+            heart.y = Math.random() * canvas.height;
         }
     });
 }
@@ -263,27 +388,45 @@ function updateClouds() {
 function updateBird() {
     if (gameState === 'playing') {
         bird.velocity += gravity;
+        bird.velocity = Math.min(bird.velocity, 10);
         bird.y += bird.velocity;
         
-        bird.rotation = Math.min(Math.max(bird.velocity * 0.1, -0.5), 0.5);
+        bird.rotation = Math.min(Math.max(bird.velocity * 0.08, -0.5), 0.5);
         
         bird.wingAngle += 0.3;
+        bird.bounceY = Math.sin(frameCount * birdBounceSpeed) * 3;
         
         if (bird.y < bird.size) {
             bird.y = bird.size;
             bird.velocity = 0;
         }
         
-        if (bird.y > canvas.height - 80 - bird.size) {
-            gameOver();
+        if (bird.y > canvas.height - 100 - bird.size) {
+            if (!bird.hasShield) {
+                gameOver();
+            } else {
+                bird.y = canvas.height - 100 - bird.size;
+                bird.velocity = -jumpPower / 2;
+                bird.hasShield = false;
+                bird.shieldTime = 0;
+                document.getElementById('powerUpDisplay').style.display = 'none';
+            }
+        }
+        
+        if (bird.hasShield) {
+            bird.shieldTime--;
+            if (bird.shieldTime <= 0) {
+                bird.hasShield = false;
+                document.getElementById('powerUpDisplay').style.display = 'none';
+            }
         }
     }
 }
 
 function updatePipes() {
-    if (frameCount % 100 === 0 && gameState === 'playing') {
-        const minHeight = 100;
-        const maxHeight = canvas.height - pipeGap - 180;
+    if (frameCount % 150 === 0 && gameState === 'playing') {
+        const minHeight = 150;
+        const maxHeight = canvas.height - pipeGap - 250;
         const top = Math.random() * (maxHeight - minHeight) + minHeight;
         
         pipes.push({
@@ -292,6 +435,16 @@ function updatePipes() {
             bottom: top + pipeGap,
             passed: false
         });
+        
+        if (Math.random() < 0.3) {
+            const powerUpTypes = ['shield', 'star', 'heart'];
+            powerUps.push({
+                x: canvas.width + pipeWidth / 2,
+                y: top + pipeGap / 2,
+                type: powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)],
+                collected: false
+            });
+        }
     }
     
     for (let i = pipes.length - 1; i >= 0; i--) {
@@ -314,15 +467,50 @@ function updatePipes() {
             playSound('score');
         }
         
-        if (checkCollision(pipes[i])) {
+        if (!bird.hasShield && checkCollision(pipes[i])) {
             gameOver();
         }
     }
 }
 
+function updatePowerUps() {
+    for (let i = powerUps.length - 1; i >= 0; i--) {
+        powerUps[i].x -= pipeSpeed;
+        
+        if (powerUps[i].x < -50) {
+            powerUps.splice(i, 1);
+            continue;
+        }
+        
+        const dist = Math.hypot(bird.x - powerUps[i].x, bird.y - powerUps[i].y);
+        if (dist < 40 && !powerUps[i].collected) {
+            powerUps[i].collected = true;
+            
+            if (powerUps[i].type === 'shield') {
+                bird.hasShield = true;
+                bird.shieldTime = 300;
+                document.getElementById('powerUpDisplay').style.display = 'block';
+                document.getElementById('powerUpDisplay').innerHTML = '🛡️ Shield Active!';
+            } else if (powerUps[i].type === 'star') {
+                score += 5;
+                updateScore();
+            } else if (powerUps[i].type === 'heart') {
+                bird.velocity = -jumpPower / 2;
+            }
+            
+            for (let j = 0; j < 15; j++) {
+                createParticle(powerUps[i].x, powerUps[i].y, 'powerup');
+            }
+            
+            playSound('powerup');
+            powerUps.splice(i, 1);
+        }
+    }
+}
+
 function checkCollision(pipe) {
-    const birdLeft = bird.x - bird.size * 0.7;
-    const birdRight = bird.x + bird.size * 0.7;
+    const birdLeft = bird.x - bird.size * 0.6;
+    const birdRight = bird.x + bird.size * 0.6;
     const birdTop = bird.y - bird.size * 0.6;
     const birdBottom = bird.y + bird.size * 0.6;
     
@@ -339,7 +527,7 @@ function jump() {
     if (gameState === 'playing') {
         bird.velocity = jumpPower;
         
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 3; i++) {
             createParticle(bird.x - bird.size, bird.y + bird.size, 'jump');
         }
         
@@ -347,23 +535,55 @@ function jump() {
     }
 }
 
+function selectBird(birdType) {
+    selectedBird = birdType;
+    bird.emoji = birdEmojis[birdType];
+    
+    document.querySelectorAll('.character-option').forEach(option => {
+        option.classList.remove('selected');
+    });
+    document.querySelector(`[data-bird="${birdType}"]`).classList.add('selected');
+    
+    playSound('select');
+}
+
 function startGame() {
     gameState = 'playing';
     score = 0;
     bird.y = canvas.height / 2;
     bird.velocity = 0;
+    bird.hasShield = false;
+    bird.shieldTime = 0;
     pipes.length = 0;
     particles.length = 0;
+    powerUps.length = 0;
     
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('scoreDisplay').style.display = 'block';
     document.getElementById('gameOverScreen').style.display = 'none';
+    document.getElementById('powerUpDisplay').style.display = 'none';
     
     updateScore();
+    createBackgroundMusic();
 }
 
 function restartGame() {
-    startGame();
+    gameState = 'playing';
+    score = 0;
+    bird.y = canvas.height / 2;
+    bird.velocity = 0;
+    bird.hasShield = false;
+    bird.shieldTime = 0;
+    bird.rotation = 0;
+    pipes.length = 0;
+    particles.length = 0;
+    powerUps.length = 0;
+    
+    document.getElementById('gameOverScreen').style.display = 'none';
+    document.getElementById('scoreDisplay').style.display = 'block';
+    document.getElementById('powerUpDisplay').style.display = 'none';
+    
+    updateScore();
 }
 
 function gameOver() {
@@ -375,8 +595,8 @@ function gameOver() {
             localStorage.setItem('bestScore', bestScore);
         }
         
-        document.getElementById('finalScore').textContent = `Score: ${score}`;
-        document.getElementById('bestScore').textContent = `Best: ${bestScore}`;
+        document.getElementById('finalScore').textContent = `Score: ${score} 🌟`;
+        document.getElementById('bestScore').textContent = `Best: ${bestScore} 🏆`;
         document.getElementById('gameOverScreen').style.display = 'block';
         
         for (let i = 0; i < 20; i++) {
@@ -391,42 +611,84 @@ function updateScore() {
     document.getElementById('scoreDisplay').textContent = score;
 }
 
+function toggleSound() {
+    soundEnabled = !soundEnabled;
+    document.getElementById('muteButton').textContent = soundEnabled ? '🔊' : '🔇';
+    playSound('toggle');
+}
+
 function playSound(type) {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+    if (!soundEnabled) return;
     
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    switch(type) {
-        case 'jump':
-            oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.1);
-            break;
-            
-        case 'score':
-            oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime);
-            oscillator.frequency.setValueAtTime(659.25, audioContext.currentTime + 0.1);
-            oscillator.frequency.setValueAtTime(783.99, audioContext.currentTime + 0.2);
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.3);
-            break;
-            
-        case 'gameover':
-            oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.5);
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.5);
-            break;
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        switch(type) {
+            case 'jump':
+                oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.1);
+                break;
+                
+            case 'score':
+                const notes = [523.25, 659.25, 783.99];
+                for (let i = 0; i < notes.length; i++) {
+                    const osc = audioContext.createOscillator();
+                    const gain = audioContext.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioContext.destination);
+                    osc.frequency.setValueAtTime(notes[i], audioContext.currentTime + i * 0.1);
+                    gain.gain.setValueAtTime(0.2, audioContext.currentTime + i * 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + i * 0.1 + 0.1);
+                    osc.start(audioContext.currentTime + i * 0.1);
+                    osc.stop(audioContext.currentTime + i * 0.1 + 0.1);
+                }
+                break;
+                
+            case 'powerup':
+                oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+                oscillator.frequency.linearRampToValueAtTime(1200, audioContext.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.3);
+                break;
+                
+            case 'select':
+                oscillator.frequency.setValueAtTime(700, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.05);
+                break;
+                
+            case 'gameover':
+                oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.5);
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.5);
+                break;
+                
+            case 'toggle':
+                oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.05);
+                break;
+        }
+    } catch (e) {
+        console.log('Audio not supported');
     }
 }
 
@@ -440,13 +702,16 @@ function gameLoop() {
     }
     
     updateClouds();
+    updateFloatingHearts();
     
     pipes.forEach(pipe => drawPipe(pipe));
+    powerUps.forEach(powerUp => drawPowerUp(powerUp));
     
     updateBird();
     drawBird();
     
     updatePipes();
+    updatePowerUps();
     
     updateParticles();
     drawParticles();
@@ -468,6 +733,11 @@ canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
     jump();
 });
+
+window.selectBird = selectBird;
+window.startGame = startGame;
+window.restartGame = restartGame;
+window.toggleSound = toggleSound;
 
 init();
 gameLoop();
