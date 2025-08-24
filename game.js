@@ -2,8 +2,8 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 function resizeCanvas() {
-    canvas.width = Math.min(window.innerWidth * 0.95, 1200);
-    canvas.height = Math.min(window.innerHeight * 0.95, 800);
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 }
 
 resizeCanvas();
@@ -17,33 +17,39 @@ let soundEnabled = true;
 let selectedBird = 'yellow';
 let backgroundMusic = null;
 let musicStarted = false;
+let isHolding = false;
+let autoFly = false;
 
-const gravity = 0.25;
-const jumpPower = -6;
-const pipeGap = 220;
-const pipeWidth = 100;
-const pipeSpeed = 2.5;
-const birdBounceSpeed = 0.15;
+const gravity = 0.15;
+const liftForce = -0.35;
+const maxVelocity = 6;
+const minVelocity = -6;
+const pipeGap = 300;
+const pipeWidth = 120;
+const pipeSpeed = 2;
 
 const bird = {
-    x: 150,
-    y: canvas.height / 2,
-    size: 40,
+    x: 0,
+    y: 0,
+    size: 45,
     velocity: 0,
     rotation: 0,
     wingAngle: 0,
-    bounceY: 0,
     emoji: '🐤',
     hasShield: false,
-    shieldTime: 0
+    shieldTime: 0,
+    trail: []
 };
 
 const birdEmojis = {
     yellow: '🐤',
     blue: '🐦',
     red: '🦜',
-    owl: '🦉',
-    eagle: '🦅'
+    plane: '✈️',
+    rocket: '🚀',
+    helicopter: '🚁',
+    balloon: '🎈',
+    butterfly: '🦋'
 };
 
 const pipes = [];
@@ -52,41 +58,58 @@ const stars = [];
 const particles = [];
 const powerUps = [];
 const floatingHearts = [];
+const backgroundElements = [];
 
 const colors = {
-    sky: ['#87CEEB', '#87E0FF'],
-    pipe: ['#74C365', '#5DAE50'],
-    ground: '#8B7355',
+    sky: ['#87CEEB', '#FFB6C1', '#E6E6FA'],
+    pipe: ['#90EE90', '#98FB98', '#00FA9A'],
+    ground: '#8FBC8F',
     sun: '#FFE484'
 };
 
 function init() {
-    for (let i = 0; i < 8; i++) {
+    bird.x = canvas.width * 0.5;
+    bird.y = canvas.height * 0.5;
+    
+    for (let i = 0; i < 12; i++) {
         clouds.push({
             x: Math.random() * canvas.width * 2,
-            y: Math.random() * (canvas.height * 0.3),
-            width: 80 + Math.random() * 60,
-            height: 40 + Math.random() * 30,
-            speed: 0.3 + Math.random() * 0.4
+            y: Math.random() * (canvas.height * 0.4),
+            width: 100 + Math.random() * 80,
+            height: 50 + Math.random() * 40,
+            speed: 0.2 + Math.random() * 0.3,
+            opacity: 0.4 + Math.random() * 0.3
         });
     }
     
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 50; i++) {
         stars.push({
             x: Math.random() * canvas.width,
             y: Math.random() * canvas.height,
-            size: Math.random() * 3,
-            twinkle: Math.random() * Math.PI * 2
+            size: Math.random() * 4,
+            twinkle: Math.random() * Math.PI * 2,
+            speed: 0.1 + Math.random() * 0.2
         });
     }
     
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
         floatingHearts.push({
             x: Math.random() * canvas.width,
             y: Math.random() * canvas.height,
-            size: 20 + Math.random() * 15,
-            speed: 0.5 + Math.random() * 0.5,
-            angle: Math.random() * Math.PI * 2
+            size: 25 + Math.random() * 20,
+            speed: 0.3 + Math.random() * 0.4,
+            angle: Math.random() * Math.PI * 2,
+            emoji: ['💖', '⭐', '🌈', '☁️'][Math.floor(Math.random() * 4)]
+        });
+    }
+    
+    for (let i = 0; i < 20; i++) {
+        backgroundElements.push({
+            x: Math.random() * canvas.width,
+            y: canvas.height - 150 - Math.random() * 100,
+            emoji: ['🌳', '🌲', '🏠', '🌻', '🌸'][Math.floor(Math.random() * 5)],
+            size: 30 + Math.random() * 20,
+            speed: 0.5
         });
     }
 }
@@ -94,138 +117,187 @@ function init() {
 function createBackgroundMusic() {
     if (!soundEnabled || musicStarted) return;
     
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    musicStarted = true;
-    
-    function playBackgroundNote() {
-        if (!soundEnabled || gameState === 'gameover') return;
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        musicStarted = true;
         
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+        function playBackgroundNote() {
+            if (!soundEnabled || gameState === 'gameover') return;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            const notes = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25];
+            const note = notes[Math.floor(Math.random() * notes.length)];
+            
+            oscillator.frequency.setValueAtTime(note, audioContext.currentTime);
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.03, audioContext.currentTime + 0.1);
+            gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 3);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 3);
+            
+            setTimeout(playBackgroundNote, 3000 + Math.random() * 2000);
+        }
         
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        const notes = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88];
-        const note = notes[Math.floor(Math.random() * notes.length)];
-        
-        oscillator.frequency.setValueAtTime(note, audioContext.currentTime);
-        oscillator.type = 'sine';
-        
-        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.05, audioContext.currentTime + 0.1);
-        gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 2);
-        
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 2);
-        
-        setTimeout(playBackgroundNote, 2000 + Math.random() * 3000);
+        playBackgroundNote();
+    } catch (e) {
+        console.log('Audio context not available');
     }
-    
-    playBackgroundNote();
 }
 
 function drawBackground() {
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, '#FFB6C1');
-    gradient.addColorStop(0.3, '#87CEEB');
-    gradient.addColorStop(0.6, '#98D8E8');
-    gradient.addColorStop(1, '#E6E6FA');
+    gradient.addColorStop(0, '#FFE5E5');
+    gradient.addColorStop(0.2, '#FFD4E5');
+    gradient.addColorStop(0.4, '#D4E5FF');
+    gradient.addColorStop(0.6, '#87CEEB');
+    gradient.addColorStop(0.8, '#B8E6B8');
+    gradient.addColorStop(1, '#E8F5E8');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    ctx.beginPath();
-    ctx.arc(canvas.width - 100, 100, 50, 0, Math.PI * 2);
-    ctx.fillStyle = colors.sun;
-    ctx.fill();
-    ctx.strokeStyle = '#FFD700';
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    const sunX = canvas.width * 0.85;
+    const sunY = canvas.height * 0.15;
+    const sunRadius = 60;
     
-    for (let i = 0; i < 12; i++) {
-        const angle = (i * Math.PI * 2) / 12 + frameCount * 0.01;
-        const x1 = canvas.width - 100 + Math.cos(angle) * 60;
-        const y1 = 100 + Math.sin(angle) * 60;
-        const x2 = canvas.width - 100 + Math.cos(angle) * 75;
-        const y2 = 100 + Math.sin(angle) * 75;
+    const sunGradient = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius);
+    sunGradient.addColorStop(0, '#FFFACD');
+    sunGradient.addColorStop(0.5, '#FFE484');
+    sunGradient.addColorStop(1, '#FFD700');
+    ctx.fillStyle = sunGradient;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    for (let i = 0; i < 16; i++) {
+        const angle = (i * Math.PI * 2) / 16 + frameCount * 0.005;
+        const x1 = sunX + Math.cos(angle) * (sunRadius + 10);
+        const y1 = sunY + Math.sin(angle) * (sunRadius + 10);
+        const x2 = sunX + Math.cos(angle) * (sunRadius + 25);
+        const y2 = sunY + Math.sin(angle) * (sunRadius + 25);
         
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
         ctx.strokeStyle = '#FFD700';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
         ctx.stroke();
     }
     
     floatingHearts.forEach(heart => {
         ctx.save();
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.4;
         ctx.font = `${heart.size}px Arial`;
-        ctx.fillText('💖', heart.x, heart.y);
+        ctx.fillText(heart.emoji, heart.x, heart.y);
         ctx.restore();
     });
     
     clouds.forEach(cloud => {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.save();
+        ctx.globalAlpha = cloud.opacity;
+        ctx.fillStyle = 'white';
         
-        for (let i = 0; i < 3; i++) {
-            const offsetX = (i - 1) * cloud.width / 3;
-            const offsetY = Math.sin(i) * 10;
+        for (let i = 0; i < 4; i++) {
+            const offsetX = (i - 1.5) * cloud.width / 4;
+            const offsetY = Math.sin(i + frameCount * 0.001) * 10;
             ctx.beginPath();
             ctx.ellipse(
                 cloud.x + offsetX, 
                 cloud.y + offsetY, 
-                cloud.width / 3, 
+                cloud.width / 3.5, 
                 cloud.height / 2, 
                 0, 0, Math.PI * 2
             );
             ctx.fill();
         }
+        ctx.restore();
     });
     
-    const groundHeight = 100;
+    const groundHeight = 150;
     const groundGradient = ctx.createLinearGradient(0, canvas.height - groundHeight, 0, canvas.height);
     groundGradient.addColorStop(0, '#90EE90');
-    groundGradient.addColorStop(0.5, '#7CFC00');
-    groundGradient.addColorStop(1, '#556B2F');
+    groundGradient.addColorStop(0.3, '#7CFC00');
+    groundGradient.addColorStop(0.7, '#98FB98');
+    groundGradient.addColorStop(1, '#228B22');
     ctx.fillStyle = groundGradient;
     ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
     
-    for (let i = 0; i < canvas.width; i += 30) {
+    for (let i = 0; i < canvas.width; i += 40) {
+        const hillHeight = 30 + Math.sin(i * 0.01) * 20;
         ctx.beginPath();
         ctx.moveTo(i, canvas.height - groundHeight);
-        ctx.quadraticCurveTo(i + 15, canvas.height - groundHeight - 10, i + 30, canvas.height - groundHeight);
-        ctx.strokeStyle = '#228B22';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        ctx.quadraticCurveTo(
+            i + 20, canvas.height - groundHeight - hillHeight,
+            i + 40, canvas.height - groundHeight
+        );
+        ctx.fillStyle = '#7CFC00';
+        ctx.fill();
     }
     
-    for (let i = 0; i < canvas.width; i += 60) {
-        ctx.font = '20px Arial';
-        ctx.fillText('🌻', i, canvas.height - groundHeight + 20);
-        ctx.fillText('🌸', i + 30, canvas.height - groundHeight + 40);
+    backgroundElements.forEach(elem => {
+        ctx.font = `${elem.size}px Arial`;
+        ctx.fillText(elem.emoji, elem.x, elem.y);
+    });
+    
+    for (let i = 0; i < canvas.width; i += 80) {
+        ctx.font = '25px Arial';
+        ctx.fillText('🌻', i, canvas.height - groundHeight + 30);
+        ctx.fillText('🌸', i + 40, canvas.height - groundHeight + 60);
+        ctx.fillText('🌼', i + 20, canvas.height - groundHeight + 90);
     }
 }
 
 function drawBird() {
+    bird.trail.push({ x: bird.x, y: bird.y, size: bird.size });
+    if (bird.trail.length > 15) {
+        bird.trail.shift();
+    }
+    
+    bird.trail.forEach((pos, index) => {
+        ctx.save();
+        ctx.globalAlpha = index * 0.05;
+        ctx.font = `${pos.size}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✨', pos.x - 20, pos.y);
+        ctx.restore();
+    });
+    
     ctx.save();
-    ctx.translate(bird.x, bird.y + bird.bounceY);
+    ctx.translate(bird.x, bird.y);
     ctx.rotate(bird.rotation);
     
     if (bird.hasShield) {
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
-        ctx.lineWidth = 5;
+        const shieldGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, bird.size + 20);
+        shieldGradient.addColorStop(0, 'rgba(255, 215, 0, 0.3)');
+        shieldGradient.addColorStop(0.5, 'rgba(255, 215, 0, 0.2)');
+        shieldGradient.addColorStop(1, 'rgba(255, 215, 0, 0.1)');
+        ctx.fillStyle = shieldGradient;
         ctx.beginPath();
-        ctx.arc(0, 0, bird.size + 10, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.arc(0, 0, bird.size + 20, 0, Math.PI * 2);
+        ctx.fill();
         
-        for (let i = 0; i < 8; i++) {
-            const angle = (i * Math.PI / 4) + frameCount * 0.05;
-            const x = Math.cos(angle) * (bird.size + 15);
-            const y = Math.sin(angle) * (bird.size + 15);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        for (let i = 0; i < 12; i++) {
+            const angle = (i * Math.PI / 6) + frameCount * 0.03;
+            const x = Math.cos(angle) * (bird.size + 25);
+            const y = Math.sin(angle) * (bird.size + 25);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
             ctx.beginPath();
-            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
             ctx.fill();
         }
     }
@@ -234,9 +306,9 @@ function drawBird() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    const wingFlap = Math.sin(bird.wingAngle) * 0.2;
+    const bounce = Math.sin(frameCount * 0.1) * 0.1;
     ctx.save();
-    ctx.scale(1 + wingFlap * 0.1, 1 - wingFlap * 0.1);
+    ctx.scale(1 + bounce, 1 - bounce * 0.5);
     ctx.fillText(bird.emoji, 0, 0);
     ctx.restore();
     
@@ -244,39 +316,55 @@ function drawBird() {
 }
 
 function drawPipe(pipe) {
-    const gradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + pipeWidth, 0);
-    gradient.addColorStop(0, '#32CD32');
-    gradient.addColorStop(0.5, '#228B22');
-    gradient.addColorStop(1, '#006400');
+    const pipeGradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + pipeWidth, 0);
+    pipeGradient.addColorStop(0, '#32CD32');
+    pipeGradient.addColorStop(0.3, '#90EE90');
+    pipeGradient.addColorStop(0.7, '#98FB98');
+    pipeGradient.addColorStop(1, '#32CD32');
     
-    ctx.fillStyle = gradient;
+    ctx.fillStyle = pipeGradient;
     ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
     ctx.fillRect(pipe.x, pipe.bottom, pipeWidth, canvas.height - pipe.bottom);
     
-    ctx.fillStyle = '#228B22';
-    ctx.fillRect(pipe.x - 10, pipe.top - 40, pipeWidth + 20, 40);
-    ctx.fillRect(pipe.x - 10, pipe.bottom, pipeWidth + 20, 40);
+    const capGradient = ctx.createLinearGradient(0, pipe.top - 50, 0, pipe.top);
+    capGradient.addColorStop(0, '#228B22');
+    capGradient.addColorStop(1, '#32CD32');
+    ctx.fillStyle = capGradient;
+    ctx.fillRect(pipe.x - 15, pipe.top - 50, pipeWidth + 30, 50);
+    ctx.fillRect(pipe.x - 15, pipe.bottom, pipeWidth + 30, 50);
     
     ctx.strokeStyle = '#006400';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
     ctx.strokeRect(pipe.x, 0, pipeWidth, pipe.top);
     ctx.strokeRect(pipe.x, pipe.bottom, pipeWidth, canvas.height - pipe.bottom);
-    ctx.strokeRect(pipe.x - 10, pipe.top - 40, pipeWidth + 20, 40);
-    ctx.strokeRect(pipe.x - 10, pipe.bottom, pipeWidth + 20, 40);
+    ctx.strokeRect(pipe.x - 15, pipe.top - 50, pipeWidth + 30, 50);
+    ctx.strokeRect(pipe.x - 15, pipe.bottom, pipeWidth + 30, 50);
     
-    for (let i = 0; i < 3; i++) {
-        ctx.font = '30px Arial';
-        ctx.fillText('🌿', pipe.x + i * 30, pipe.top - 10);
-        ctx.fillText('🌿', pipe.x + i * 30, pipe.bottom + 30);
+    for (let i = 0; i < 4; i++) {
+        ctx.font = '35px Arial';
+        ctx.fillText('🌿', pipe.x + i * 30, pipe.top - 15);
+        ctx.fillText('🍃', pipe.x + i * 30, pipe.bottom + 35);
     }
+    
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(pipe.x + 20 + i * 30, 20, 10, pipe.top - 40);
+        ctx.fillRect(pipe.x + 20 + i * 30, pipe.bottom + 20, 10, canvas.height - pipe.bottom - 40);
+    }
+    ctx.restore();
 }
 
 function drawPowerUp(powerUp) {
     ctx.save();
     ctx.translate(powerUp.x, powerUp.y);
-    ctx.rotate(frameCount * 0.05);
     
-    ctx.font = '40px Arial';
+    const pulse = Math.sin(frameCount * 0.1) * 0.2 + 1;
+    ctx.scale(pulse, pulse);
+    ctx.rotate(frameCount * 0.02);
+    
+    ctx.font = '50px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
@@ -286,38 +374,42 @@ function drawPowerUp(powerUp) {
         ctx.fillText('⭐', 0, 0);
     } else if (powerUp.type === 'heart') {
         ctx.fillText('💖', 0, 0);
+    } else if (powerUp.type === 'rainbow') {
+        ctx.fillText('🌈', 0, 0);
     }
     
     ctx.restore();
     
-    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
-    ctx.lineWidth = 2;
+    const glowGradient = ctx.createRadialGradient(powerUp.x, powerUp.y, 0, powerUp.x, powerUp.y, 40);
+    glowGradient.addColorStop(0, 'rgba(255, 215, 0, 0.3)');
+    glowGradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+    ctx.fillStyle = glowGradient;
     ctx.beginPath();
-    ctx.arc(powerUp.x, powerUp.y, 25, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.arc(powerUp.x, powerUp.y, 40, 0, Math.PI * 2);
+    ctx.fill();
 }
 
 function createParticle(x, y, type) {
     const particleTypes = {
-        score: ['⭐', '✨', '💫', '🌟'],
-        jump: ['☁️', '💨', '🌬️'],
-        powerup: ['✨', '💖', '🌈', '🎉'],
-        crash: ['💥', '😵', '🌀']
+        score: ['⭐', '✨', '💫', '🌟', '🎉'],
+        fly: ['☁️', '💨', '🌬️', '✨'],
+        powerup: ['✨', '💖', '🌈', '🎉', '🎊'],
+        crash: ['💥', '😵', '🌀', '😢']
     };
     
     const emojis = particleTypes[type] || ['✨'];
     
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
         particles.push({
             x: x,
             y: y,
-            vx: (Math.random() - 0.5) * 6,
-            vy: (Math.random() - 0.5) * 6,
+            vx: (Math.random() - 0.5) * 8,
+            vy: (Math.random() - 0.5) * 8,
             emoji: emojis[Math.floor(Math.random() * emojis.length)],
-            size: 20 + Math.random() * 20,
+            size: 25 + Math.random() * 25,
             life: 1,
             rotation: Math.random() * Math.PI * 2,
-            rotationSpeed: (Math.random() - 0.5) * 0.2
+            rotationSpeed: (Math.random() - 0.5) * 0.3
         });
     }
 }
@@ -327,9 +419,10 @@ function updateParticles() {
         const p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.vy += 0.2;
-        p.life -= 0.02;
-        p.size *= 0.97;
+        p.vy += 0.15;
+        p.vx *= 0.98;
+        p.life -= 0.015;
+        p.size *= 0.98;
         p.rotation += p.rotationSpeed;
         
         if (p.life <= 0 || p.size < 5) {
@@ -355,10 +448,22 @@ function drawParticles() {
 function drawStars() {
     stars.forEach(star => {
         const twinkle = Math.sin(star.twinkle + frameCount * 0.05) * 0.5 + 0.5;
-        ctx.fillStyle = `rgba(255, 255, 255, ${twinkle * 0.8})`;
+        ctx.save();
+        ctx.globalAlpha = twinkle * 0.6;
+        ctx.fillStyle = 'white';
         ctx.beginPath();
         ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
         ctx.fill();
+        
+        ctx.beginPath();
+        ctx.moveTo(star.x - star.size * 2, star.y);
+        ctx.lineTo(star.x + star.size * 2, star.y);
+        ctx.moveTo(star.x, star.y - star.size * 2);
+        ctx.lineTo(star.x, star.y + star.size * 2);
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = star.size * 0.5;
+        ctx.stroke();
+        ctx.restore();
     });
 }
 
@@ -367,7 +472,7 @@ function updateClouds() {
         cloud.x -= cloud.speed;
         if (cloud.x < -cloud.width * 2) {
             cloud.x = canvas.width + cloud.width;
-            cloud.y = Math.random() * (canvas.height * 0.3);
+            cloud.y = Math.random() * (canvas.height * 0.4);
         }
     });
 }
@@ -375,7 +480,7 @@ function updateClouds() {
 function updateFloatingHearts() {
     floatingHearts.forEach(heart => {
         heart.x -= heart.speed;
-        heart.y += Math.sin(heart.angle) * 0.5;
+        heart.y += Math.sin(heart.angle) * 0.8;
         heart.angle += 0.02;
         
         if (heart.x < -50) {
@@ -385,28 +490,54 @@ function updateFloatingHearts() {
     });
 }
 
+function updateBackgroundElements() {
+    backgroundElements.forEach(elem => {
+        elem.x -= elem.speed;
+        if (elem.x < -50) {
+            elem.x = canvas.width + 50;
+            elem.y = canvas.height - 150 - Math.random() * 100;
+        }
+    });
+}
+
 function updateBird() {
     if (gameState === 'playing') {
-        bird.velocity += gravity;
-        bird.velocity = Math.min(bird.velocity, 10);
+        if (isHolding) {
+            bird.velocity += liftForce;
+            if (frameCount % 5 === 0) {
+                createParticle(bird.x - bird.size, bird.y + bird.size, 'fly');
+            }
+        } else {
+            bird.velocity += gravity;
+        }
+        
+        bird.velocity = Math.max(minVelocity, Math.min(maxVelocity, bird.velocity));
+        
         bird.y += bird.velocity;
         
-        bird.rotation = Math.min(Math.max(bird.velocity * 0.08, -0.5), 0.5);
+        if (autoFly) {
+            const targetY = canvas.height * 0.5;
+            const diff = targetY - bird.y;
+            if (Math.abs(diff) > 50) {
+                bird.velocity += diff * 0.001;
+            }
+        }
         
-        bird.wingAngle += 0.3;
-        bird.bounceY = Math.sin(frameCount * birdBounceSpeed) * 3;
+        bird.rotation = Math.min(Math.max(bird.velocity * 0.05, -0.3), 0.3);
+        
+        bird.wingAngle += 0.2;
         
         if (bird.y < bird.size) {
             bird.y = bird.size;
             bird.velocity = 0;
         }
         
-        if (bird.y > canvas.height - 100 - bird.size) {
+        if (bird.y > canvas.height - 150 - bird.size) {
             if (!bird.hasShield) {
                 gameOver();
             } else {
-                bird.y = canvas.height - 100 - bird.size;
-                bird.velocity = -jumpPower / 2;
+                bird.y = canvas.height - 150 - bird.size;
+                bird.velocity = -3;
                 bird.hasShield = false;
                 bird.shieldTime = 0;
                 document.getElementById('powerUpDisplay').style.display = 'none';
@@ -424,9 +555,9 @@ function updateBird() {
 }
 
 function updatePipes() {
-    if (frameCount % 150 === 0 && gameState === 'playing') {
-        const minHeight = 150;
-        const maxHeight = canvas.height - pipeGap - 250;
+    if (frameCount % 200 === 0 && gameState === 'playing') {
+        const minHeight = 200;
+        const maxHeight = canvas.height - pipeGap - 350;
         const top = Math.random() * (maxHeight - minHeight) + minHeight;
         
         pipes.push({
@@ -436,8 +567,8 @@ function updatePipes() {
             passed: false
         });
         
-        if (Math.random() < 0.3) {
-            const powerUpTypes = ['shield', 'star', 'heart'];
+        if (Math.random() < 0.4) {
+            const powerUpTypes = ['shield', 'star', 'heart', 'rainbow'];
             powerUps.push({
                 x: canvas.width + pipeWidth / 2,
                 y: top + pipeGap / 2,
@@ -460,7 +591,7 @@ function updatePipes() {
             score++;
             updateScore();
             
-            for (let j = 0; j < 10; j++) {
+            for (let j = 0; j < 12; j++) {
                 createParticle(bird.x, bird.y, 'score');
             }
             
@@ -483,22 +614,27 @@ function updatePowerUps() {
         }
         
         const dist = Math.hypot(bird.x - powerUps[i].x, bird.y - powerUps[i].y);
-        if (dist < 40 && !powerUps[i].collected) {
+        if (dist < 60 && !powerUps[i].collected) {
             powerUps[i].collected = true;
             
             if (powerUps[i].type === 'shield') {
                 bird.hasShield = true;
-                bird.shieldTime = 300;
+                bird.shieldTime = 500;
                 document.getElementById('powerUpDisplay').style.display = 'block';
                 document.getElementById('powerUpDisplay').innerHTML = '🛡️ Shield Active!';
             } else if (powerUps[i].type === 'star') {
-                score += 5;
+                score += 10;
                 updateScore();
             } else if (powerUps[i].type === 'heart') {
-                bird.velocity = -jumpPower / 2;
+                bird.velocity = -4;
+            } else if (powerUps[i].type === 'rainbow') {
+                autoFly = true;
+                setTimeout(() => { autoFly = false; }, 5000);
+                document.getElementById('powerUpDisplay').style.display = 'block';
+                document.getElementById('powerUpDisplay').innerHTML = '🌈 Auto-Fly Active!';
             }
             
-            for (let j = 0; j < 15; j++) {
+            for (let j = 0; j < 20; j++) {
                 createParticle(powerUps[i].x, powerUps[i].y, 'powerup');
             }
             
@@ -509,10 +645,10 @@ function updatePowerUps() {
 }
 
 function checkCollision(pipe) {
-    const birdLeft = bird.x - bird.size * 0.6;
-    const birdRight = bird.x + bird.size * 0.6;
-    const birdTop = bird.y - bird.size * 0.6;
-    const birdBottom = bird.y + bird.size * 0.6;
+    const birdLeft = bird.x - bird.size * 0.5;
+    const birdRight = bird.x + bird.size * 0.5;
+    const birdTop = bird.y - bird.size * 0.5;
+    const birdBottom = bird.y + bird.size * 0.5;
     
     if (birdRight > pipe.x && birdLeft < pipe.x + pipeWidth) {
         if (birdTop < pipe.top || birdBottom > pipe.bottom) {
@@ -521,18 +657,6 @@ function checkCollision(pipe) {
     }
     
     return false;
-}
-
-function jump() {
-    if (gameState === 'playing') {
-        bird.velocity = jumpPower;
-        
-        for (let i = 0; i < 3; i++) {
-            createParticle(bird.x - bird.size, bird.y + bird.size, 'jump');
-        }
-        
-        playSound('jump');
-    }
 }
 
 function selectBird(birdType) {
@@ -550,18 +674,26 @@ function selectBird(birdType) {
 function startGame() {
     gameState = 'playing';
     score = 0;
-    bird.y = canvas.height / 2;
+    bird.x = canvas.width * 0.5;
+    bird.y = canvas.height * 0.5;
     bird.velocity = 0;
     bird.hasShield = false;
     bird.shieldTime = 0;
+    bird.trail = [];
     pipes.length = 0;
     particles.length = 0;
     powerUps.length = 0;
+    autoFly = false;
     
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('scoreDisplay').style.display = 'block';
+    document.getElementById('modeDisplay').style.display = 'block';
     document.getElementById('gameOverScreen').style.display = 'none';
     document.getElementById('powerUpDisplay').style.display = 'none';
+    
+    setTimeout(() => {
+        document.getElementById('modeDisplay').style.display = 'none';
+    }, 3000);
     
     updateScore();
     createBackgroundMusic();
@@ -570,14 +702,17 @@ function startGame() {
 function restartGame() {
     gameState = 'playing';
     score = 0;
-    bird.y = canvas.height / 2;
+    bird.x = canvas.width * 0.5;
+    bird.y = canvas.height * 0.5;
     bird.velocity = 0;
     bird.hasShield = false;
     bird.shieldTime = 0;
     bird.rotation = 0;
+    bird.trail = [];
     pipes.length = 0;
     particles.length = 0;
     powerUps.length = 0;
+    autoFly = false;
     
     document.getElementById('gameOverScreen').style.display = 'none';
     document.getElementById('scoreDisplay').style.display = 'block';
@@ -599,7 +734,7 @@ function gameOver() {
         document.getElementById('bestScore').textContent = `Best: ${bestScore} 🏆`;
         document.getElementById('gameOverScreen').style.display = 'block';
         
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 25; i++) {
             createParticle(bird.x, bird.y, 'crash');
         }
         
@@ -629,41 +764,41 @@ function playSound(type) {
         gainNode.connect(audioContext.destination);
         
         switch(type) {
-            case 'jump':
-                oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-                oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
-                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            case 'fly':
+                oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(700, audioContext.currentTime + 0.05);
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
                 oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.1);
+                oscillator.stop(audioContext.currentTime + 0.05);
                 break;
                 
             case 'score':
-                const notes = [523.25, 659.25, 783.99];
+                const notes = [523.25, 659.25, 783.99, 1046.50];
                 for (let i = 0; i < notes.length; i++) {
                     const osc = audioContext.createOscillator();
                     const gain = audioContext.createGain();
                     osc.connect(gain);
                     gain.connect(audioContext.destination);
-                    osc.frequency.setValueAtTime(notes[i], audioContext.currentTime + i * 0.1);
-                    gain.gain.setValueAtTime(0.2, audioContext.currentTime + i * 0.1);
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + i * 0.1 + 0.1);
-                    osc.start(audioContext.currentTime + i * 0.1);
-                    osc.stop(audioContext.currentTime + i * 0.1 + 0.1);
+                    osc.frequency.setValueAtTime(notes[i], audioContext.currentTime + i * 0.08);
+                    gain.gain.setValueAtTime(0.15, audioContext.currentTime + i * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + i * 0.08 + 0.1);
+                    osc.start(audioContext.currentTime + i * 0.08);
+                    osc.stop(audioContext.currentTime + i * 0.08 + 0.1);
                 }
                 break;
                 
             case 'powerup':
                 oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-                oscillator.frequency.linearRampToValueAtTime(1200, audioContext.currentTime + 0.2);
-                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                oscillator.frequency.linearRampToValueAtTime(1600, audioContext.currentTime + 0.3);
+                gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
                 oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.3);
+                oscillator.stop(audioContext.currentTime + 0.4);
                 break;
                 
             case 'select':
-                oscillator.frequency.setValueAtTime(700, audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
                 gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
                 oscillator.start(audioContext.currentTime);
@@ -671,20 +806,20 @@ function playSound(type) {
                 break;
                 
             case 'gameover':
-                oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
-                oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.5);
-                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.8);
+                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.8);
                 oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.5);
+                oscillator.stop(audioContext.currentTime + 0.8);
                 break;
                 
             case 'toggle':
-                oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
-                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+                oscillator.frequency.setValueAtTime(600, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.08, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.03);
                 oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.05);
+                oscillator.stop(audioContext.currentTime + 0.03);
                 break;
         }
     } catch (e) {
@@ -703,6 +838,7 @@ function gameLoop() {
     
     updateClouds();
     updateFloatingHearts();
+    updateBackgroundElements();
     
     pipes.forEach(pipe => drawPipe(pipe));
     powerUps.forEach(powerUp => drawPowerUp(powerUp));
@@ -722,16 +858,42 @@ function gameLoop() {
 }
 
 document.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') {
+    if (e.code === 'Space' && gameState === 'playing') {
         e.preventDefault();
-        jump();
+        isHolding = true;
+        playSound('fly');
     }
 });
 
-canvas.addEventListener('click', jump);
+document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') {
+        e.preventDefault();
+        isHolding = false;
+    }
+});
+
+canvas.addEventListener('mousedown', () => {
+    if (gameState === 'playing') {
+        isHolding = true;
+        playSound('fly');
+    }
+});
+
+canvas.addEventListener('mouseup', () => {
+    isHolding = false;
+});
+
 canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    jump();
+    if (gameState === 'playing') {
+        isHolding = true;
+        playSound('fly');
+    }
+});
+
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    isHolding = false;
 });
 
 window.selectBird = selectBird;
