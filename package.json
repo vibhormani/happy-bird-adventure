@@ -1,0 +1,47 @@
+{
+  "name": "happy-sky-adventure",
+  "version": "1.0.0",
+  "description": "A colorful, engaging, and super-easy HTML5 flying game designed for young children aged 4-10",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx http-server -p 8080",
+    "dev": "npx http-server -p 8080 -c-1",
+    "serve": "python3 -m http.server 8080",
+    "open": "open http://localhost:8080"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibhormani/happy-bird-adventure.git"
+  },
+  "keywords": [
+    "game",
+    "html5",
+    "canvas",
+    "javascript",
+    "kids",
+    "children",
+    "educational",
+    "flappy-bird",
+    "flying-game",
+    "browser-game",
+    "web-game",
+    "family-friendly"
+  ],
+  "author": "Vibhor Mani Choudhary",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/vibhormani/happy-bird-adventure/issues"
+  },
+  "homepage": "https://vibhormani.github.io/happy-bird-adventure/",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+}
