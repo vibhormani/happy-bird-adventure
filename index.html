@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Happy Bird Adventure - A Fun Game for Kids!</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Fredoka', cursive;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        .game-container {
+            position: relative;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            background: white;
+            padding: 10px;
+        }
+        
+        canvas {
+            border-radius: 15px;
+            display: block;
+            cursor: pointer;
+        }
+        
+        .start-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            z-index: 10;
+        }
+        
+        .start-screen h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.3);
+            animation: float 2s ease-in-out infinite;
+        }
+        
+        .start-button {
+            background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%);
+            border: none;
+            color: white;
+            padding: 20px 40px;
+            font-size: 28px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-family: 'Fredoka', cursive;
+            font-weight: 600;
+            transition: transform 0.3s, box-shadow 0.3s;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .start-button:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .score-display {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 48px;
+            font-weight: 700;
+            color: white;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.3);
+            z-index: 5;
+        }
+        
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            z-index: 10;
+            display: none;
+        }
+        
+        .game-over h2 {
+            font-size: 42px;
+            margin-bottom: 15px;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        .final-score {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+        
+        .best-score {
+            font-size: 24px;
+            margin-bottom: 30px;
+            color: #FFD700;
+        }
+        
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+        
+        .controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            z-index: 5;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 0.7;
+            }
+            50% {
+                opacity: 1;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .start-screen h1 {
+                font-size: 36px;
+            }
+            
+            .start-button {
+                font-size: 24px;
+                padding: 15px 30px;
+            }
+            
+            .score-display {
+                font-size: 36px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div class="start-screen" id="startScreen">
+            <h1>🐦 Happy Bird Adventure 🌈</h1>
+            <button class="start-button" onclick="startGame()">Play Now!</button>
+            <div class="controls-hint">Tap or Press Space to Fly!</div>
+        </div>
+        
+        <div class="score-display" id="scoreDisplay" style="display: none;">0</div>
+        
+        <div class="game-over" id="gameOverScreen">
+            <h2>Great Job! 🌟</h2>
+            <div class="final-score" id="finalScore">Score: 0</div>
+            <div class="best-score" id="bestScore">Best: 0</div>
+            <button class="start-button" onclick="restartGame()">Try Again!</button>
+        </div>
+    </div>
+    
+    <script src="game.js"></script>
+</body>
+</html>
